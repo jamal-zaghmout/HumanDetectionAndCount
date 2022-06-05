@@ -1,6 +1,7 @@
-from WiFiCamera import HumanCount
+import HumanCount
 import csv
 import os
+from time import sleep
 import asyncio
 from azure.iot.device.aio import IoTHubDeviceClient
 from azure.iot.device.aio import ProvisioningDeviceClient
@@ -9,7 +10,7 @@ from azure.iot.device import MethodResponse
 os.chdir(os.path.dirname(os.path.realpath(__file__)))
 
 # ––––– Define IOT central Variables saved in the CSV file ––––– #
-env_var_path = os.path.join(os.path.dirname(__file__), '../DeviceEnvironment_Camera.csv')
+env_var_path = os.path.join(os.path.dirname(__file__), 'DeviceEnvironment_Camera.csv')
 with open(env_var_path, newline='') as fp:
     csvreader = csv.DictReader(fp)
     for row in csvreader:
@@ -104,6 +105,5 @@ async def main():
 
 
 if __name__ == "__main__":
-    # sleep(150)
     while True:
         asyncio.run(main())
