@@ -7,73 +7,52 @@ import shutil
 import subprocess
 from datetime import datetime
 from pathlib import Path
-from time import sleep
 
 import pandas as pd
-import requests
 from azure.iot.device import Message
 from azure.iot.device.aio import IoTHubDeviceClient
 from azure.iot.device.aio import ProvisioningDeviceClient
 from azure.storage.blob import BlobServiceClient
 from exif import Image
-from requests.auth import HTTPDigestAuth
+
+import gphoto2 as gp
 
 os.chdir(os.path.dirname(os.path.realpath(__file__)))
 
 
-def captureImageAndGetResponse(THETA_URL, THETA_ID, THETA_PASSWORD):
-    # From takePicture() func in 'codetricity/theta-client-mode/simple-client.py' | WITH FEW ALTERATIONS
-    url = THETA_URL + 'commands/execute'
-    payload = {"name": "camera.takePicture"}
-    req1 = requests.post(url,
-                         json=payload,
-                         auth=(HTTPDigestAuth(THETA_ID, THETA_PASSWORD)))
+def captureImageAndExtractMetadata():
+    # Capturing the image via USB
+    camera = gp.Camera()
+    camera.init()
+    print('Capturing image')
+    file_path = camera.capture(gp.GP_CAPTURE_IMAGE)
+    print('Camera file path: {0}/{1}'.format(file_path.folder, file_path.name))
+    target = os.path.join(os.path.dirname(__file__), file_path.name)
+    print('Copying image to', target)
+    camera_file = camera.file_get(
+        file_path.folder, file_path.name, gp.GP_FILE_TYPE_NORMAL)
+    camera_file.save(target)
+    camera.exit()
 
-    resp1 = req1.json()
-    print("TakePicture EXECUTED")
-    print(resp1)
+    # Extracting metadata
+    try:
+        with open(file_path.name, 'rb') as image_file:
+            image = Image(image_file)
 
-    # Wait 8 seconds to make sure the image was saved on the device
-    print('Wait 8 seconds')
-    sleep(8)
+        gps_latitude = dms_coordinates_to_dd_coordinates(image.gps_latitude, image.gps_latitude_ref)
+        gps_longitude = dms_coordinates_to_dd_coordinates(image.gps_longitude, image.gps_longitude_ref)
+        gps_altitude = image.gps_altitude
+    except:
+        logging.exception('GPS information could not be retrieved')
+        gps_latitude = 0
+        gps_longitude = 0
+        gps_altitude = 0
 
-    # From listFiles() func in 'codetricity/theta-client-mode/simple-client.py' | WITH ALTERATIONS
-    url = THETA_URL + 'commands/execute'
-    commandString = "camera.listFiles"
-    payload = {
-        "name": commandString,
-        "parameters": {
-            "fileType": "image",
-            "entryCount": 1,
-            "maxThumbSize": 0
-        }}
-    req2 = requests.post(url,
-                         json=payload,
-                         auth=(HTTPDigestAuth(THETA_ID, THETA_PASSWORD)))
+    datetime_metadata = image.datetime_original + image.offset_time
 
-    resp2 = json.dumps(req2.json())
-    responseJsonData = json.loads(resp2)
+    metadata = [str(file_path.name), datetime_metadata, gps_latitude, gps_longitude, gps_altitude]
 
-    return responseJsonData
-
-
-def getImageByUrl(image_url, THETA_ID, THETA_PASSWORD):
-    print('Downloading image locally')
-    image_name = image_url.split("/")[-1]
-
-    print("Saving " + image_name + " to file")
-    with open(image_name, 'wb') as handle:
-        response = requests.get(
-            image_url,
-            stream=True,
-            auth=(HTTPDigestAuth(THETA_ID, THETA_PASSWORD)))
-
-        if not response.ok:
-            print(response)
-        for block in response.iter_content(1024):
-            if not block:
-                break
-            handle.write(block)
+    return metadata
 
 
 def photoInferenceAndGetInferenceResults(image_name):
@@ -86,15 +65,15 @@ def photoInferenceAndGetInferenceResults(image_name):
     try:
         # Run inference using YOLOv5's 'detect.py' to customize output
         subprocess.call(
-            ['python3', os.path.join(os.path.dirname(__file__), '../yolov5/detect.py'), '--weights', 'yolov5x6.pt',
+            ['python3', os.path.join(os.path.dirname(__file__), 'yolov5/detect.py'), '--weights', 'yolov5x6.pt',
              '--source', image_name, '--classes', '0', '56', '--conf-thres', '0.7', '--hide-conf',
-             '--line-thickness', '15', '--project', os.path.join(os.path.dirname(__file__), '../runs/detect'),
+             '--line-thickness', '15', '--project', os.path.join(os.path.dirname(__file__), 'runs/detect'),
              '--exist-ok', '--save-txt']
         )
     except:
         logging.exception('Could not run inference on image; Inferencing Failed')
 
-    RDEdirectory = os.path.join(os.path.dirname(__file__), '../runs/detect/exp/')
+    RDEdirectory = os.path.join(os.path.dirname(__file__), 'runs/detect/exp/')
     pre, ext = os.path.splitext(RDEdirectory + image_name)
     labels_filename = pre.split(sep='/')[-1] + '.txt'
     labels_filepath = Path(RDEdirectory + 'labels/' + labels_filename)
@@ -118,17 +97,6 @@ def photoInferenceAndGetInferenceResults(image_name):
 
 #####################################################
 # Azure async Functions
-
-def stdin_listener():
-    """
-    Listener for quitting the sample
-    """
-    while True:
-        selection = input("Press Q to quit\n")
-        if selection == "Q" or selection == "q":
-            print("Quitting...")
-            break
-
 
 async def provision_device(provisioning_host, id_scope, registration_id, symmetric_key, model_id):
     provisioning_device_client = ProvisioningDeviceClient.create_from_symmetric_key(
@@ -176,28 +144,6 @@ def dms_coordinates_to_dd_coordinates(coordinates, coordinates_ref):
         return 0
 
 
-def extractMetadata(image_name):
-    try:
-        with open(image_name, 'rb') as image_file:
-            image = Image(image_file)
-
-        gps_latitude = dms_coordinates_to_dd_coordinates(image.gps_latitude, image.gps_latitude_ref)
-        gps_longitude = dms_coordinates_to_dd_coordinates(image.gps_longitude, image.gps_longitude_ref)
-        gps_altitude = image.gps_altitude
-    except:
-        logging.exception('GPS information could not be retrieved')
-        gps_latitude = 0
-        gps_longitude = 0
-        gps_altitude = 0
-
-    datetime_metadata = image.datetime_original + image.offset_time
-    datetime_obj = datetime.strptime(datetime_metadata, '%Y:%m:%d %H:%M:%S%z').isoformat()
-
-    metadata = [datetime_obj, gps_latitude, gps_longitude, gps_altitude]
-
-    return metadata
-
-
 async def uploadBlobToAzureAndRemoveRunsDirectoryAndLocalImage(conn_str, altered_filename, image_name, runs_dir):
     # Create the BlobServiceClient object
     blob_service_client = BlobServiceClient.from_connection_string(conn_str)
@@ -224,7 +170,7 @@ async def uploadBlobToAzureAndRemoveRunsDirectoryAndLocalImage(conn_str, altered
 
 async def main(location_id):
     # ––––– Define IOT central Variables saved in the CSV file ––––– #
-    env_var_path = os.path.join(os.path.dirname(__file__), '../DeviceEnvironment_Camera.csv')
+    env_var_path = os.path.join(os.path.dirname(__file__), 'DeviceEnvironment_Camera.csv')
     with open(env_var_path, newline='') as fp:
         csvreader = csv.DictReader(fp)
         for row in csvreader:
@@ -238,9 +184,6 @@ async def main(location_id):
 
     conn_str = Device['AZURE_WEB_STORAGE_CONNECTION_STRING']
     model_id = Device['model_id']
-    THETA_ID = Device['THETA_ID']
-    THETA_PASSWORD = Device['THETA_PASSWORD']
-    THETA_URL = Device['THETA_URL']
 
     # ––––– Connecting to IoT Central ––––– #
     switch = IOTHUB_DEVICE_SECURITY_TYPE
@@ -288,37 +231,30 @@ async def main(location_id):
     await device_client.connect()
     # ––––– End of Connecting to IoT Central ––––– #
 
-    # Capture the image on the camera and receive a JSON response to get info from for renaming
-    responseJsonData = captureImageAndGetResponse(THETA_URL, THETA_ID, THETA_PASSWORD)
+    # Capture the image on the camera and extract metadata from picture taken
+    metadata = captureImageAndExtractMetadata()
 
-    # ––––– Retrieve metadata from the received JsonData response ––––– #
-    image_name = responseJsonData['results']['entries'][0]['name']
-    last_photo_url = responseJsonData['results']['entries'][0]['fileUrl']
-    timestamp = responseJsonData['results']['entries'][0]['dateTimeZone']
+    # ––––– Retrieve metadata from the received response ––––– #
+    # [str(file_path.name), datetime_obj, gps_latitude, gps_longitude, gps_altitude]
+    image_name = metadata[0]
+    datetime_str = metadata[1]
+    gps_latitude = float(metadata[2])
+    gps_longitude = float(metadata[3])
+    gps_altitude = int(metadata[4])
 
-    # Example dateTimeZone as sent from the API = '2022:05:13 18:20:14-04:00'
-    timestamp = timestamp.replace(':', '')
+    # Example dateTimeZone as sent from the API = '2022:05:13 18:20:14-04:00'; Convert to '20220513_182014-0400'
+    timestamp = datetime_str.replace(':', '')
     timestamp = timestamp.replace(' ', '_')
-
-    # Save image taken by the camera on the Jetson Nano (locally)
-    getImageByUrl(last_photo_url, THETA_ID, THETA_PASSWORD)
-
+    
     # Run inference on it then save results and return # of persons and extract metadata
     inference_results = photoInferenceAndGetInferenceResults(image_name)
     number_of_persons = int(inference_results[0])
     number_of_chairs = int(inference_results[1])
-    metadata = extractMetadata(image_name)
-    datetime_str = str(metadata[0])
-    gps_latitude = float(metadata[1])
-    gps_longitude = float(metadata[2])
-    gps_altitude = int(metadata[3])
-
-    location_id_str = str(location_id)
 
     # Rename inferenced file
-    altered_filename = location_id_str + '_' + timestamp + '.JPG'  # Example output: 'Room07_20220513_182014-0400.JPG'
+    altered_filename = str(location_id) + '_' + timestamp + '.JPG'  # Example output: 'Room07_20220513_182014-0400.JPG'
 
-    RDEdir = os.path.join(os.path.dirname(__file__), '../runs/detect/exp/')
+    RDEdir = os.path.join(os.path.dirname(__file__), 'runs/detect/exp/')
     os.rename(RDEdir + image_name, RDEdir + altered_filename)
 
     # Send the data as telemetries to Azure IoT Central | WIP
@@ -335,4 +271,4 @@ async def main(location_id):
     await device_client.shutdown()
 
     # Move inferenced image to Azure Web Storage
-    await uploadBlobToAzureAndRemoveRunsDirectoryAndLocalImage(conn_str, altered_filename, image_name, '../runs/')
+    await uploadBlobToAzureAndRemoveRunsDirectoryAndLocalImage(conn_str, altered_filename, image_name, 'runs/')
