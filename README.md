@@ -7,7 +7,7 @@ YOLOv5 model and PyTorch.
 
 - ### Python 3.8
 
-**Python3.8** is needed since YOLOv5 requires Python >=3.8 to work.
+**Python3.8** is needed since YOLOv5 requires Python>=3.8 to work.
 
 - ### YOLOv5
 
