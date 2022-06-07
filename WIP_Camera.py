@@ -1,7 +1,6 @@
 import HumanCount
 import csv
 import os
-from time import sleep
 import asyncio
 from azure.iot.device.aio import IoTHubDeviceClient
 from azure.iot.device.aio import ProvisioningDeviceClient
@@ -94,7 +93,6 @@ async def main():
             )
             locationID = method_request.payload
             await HumanCount.main(locationID)
-            # await WIP_Device_Send_Telemetry.main()
             print('done wip')
             await device_client.send_method_response(method_response)  # send response
 
