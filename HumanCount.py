@@ -65,13 +65,21 @@ def photoInferenceAndGetInferenceResults(image_name):
     try:
         # Run inference using YOLOv5's 'detect.py' to customize output
         subprocess.call(
-            ['python3', os.path.join(os.path.dirname(__file__), 'yolov5/detect.py'), '--weights', 'yolov5x6.pt',
-             '--source', image_name, '--classes', '0', '56', '--conf-thres', '0.7', '--hide-conf',
-             '--line-thickness', '15', '--project', os.path.join(os.path.dirname(__file__), 'runs/detect'),
-             '--exist-ok', '--save-txt']
+            [
+                'python3', os.path.join(os.path.dirname(__file__), 'yolov5/detect.py'),
+                '--weights', 'yolov5x6.pt',
+                '--source', image_name,
+                '--classes', '0', '56',
+                '--conf-thres', '0.7',
+                '--hide-conf',
+                '--line-thickness', '15',
+                '--exist-ok',
+                '--save-txt'
+                '--project', os.path.join(os.path.dirname(__file__), 'runs/detect'),
+            ]
         )
     except:
-        logging.exception('Could not run inference on image; Inferencing Failed')
+        logging.exception('Could not run inference on image. Inference Failed!')
 
     RDEdirectory = os.path.join(os.path.dirname(__file__), 'runs/detect/exp/')
     pre, ext = os.path.splitext(RDEdirectory + image_name)
@@ -144,19 +152,38 @@ def dms_coordinates_to_dd_coordinates(coordinates, coordinates_ref):
         return 0
 
 
+def faceBlur(image_name, altered_filename):
+    inferenced_image_filepath = 'runs/detect/exp/' + image_name
+    inferenced_blurred_output_filepath = 'runs/detect/exp/' + altered_filename
+
+    try:
+        # Blur faces on inferenced image using Jan Schmidt's 'blur360' project
+        # command = blur360/build/src/equirect-blur-image -m=models -o=output_name.jpg inferenced_image_name.JPG
+        subprocess.call(
+            [
+                'blur360/build/src/equirect-blur-image',
+                '-m=models',
+                '-o=' + inferenced_blurred_output_filepath,
+                inferenced_image_filepath
+            ]
+        )
+    except:
+        logging.exception('Could not run face blurring inferenced image!')
+
+
 async def uploadBlobToAzureAndRemoveRunsDirectoryAndLocalImage(conn_str, altered_filename, image_name, runs_dir):
     # Create the BlobServiceClient object
     blob_service_client = BlobServiceClient.from_connection_string(conn_str)
     container_name = 'wipcontainer'
 
-    upload_file_path = 'runs/detect/exp/' + altered_filename
+    inferenced_blurred_output_filepath = 'runs/detect/exp/' + altered_filename
 
     # Create a blob client using the local file name as the name for the blob
     blob_client = blob_service_client.get_blob_client(container=container_name, blob=altered_filename)
 
     # Upload the created file
     print("\nUploading to Azure Storage as blob:\n\t" + altered_filename)
-    with open(upload_file_path, "rb") as data:
+    with open(inferenced_blurred_output_filepath, "rb") as data:
         blob_client.upload_blob(data)
 
     # Delete the local directory the inferenced file is stored in after uploading it as a blob to Azure Blob Storage
@@ -245,17 +272,14 @@ async def main(location_id):
     # Example dateTimeZone as sent from the API = '2022:05:13 18:20:14-04:00'; Convert to '20220513_182014-0400'
     timestamp = datetime_str.replace(':', '')
     timestamp = timestamp.replace(' ', '_')
-    
+
     # Run inference on it then save results and return # of persons and extract metadata
     inference_results = photoInferenceAndGetInferenceResults(image_name)
     number_of_persons = int(inference_results[0])
     number_of_chairs = int(inference_results[1])
 
-    # Rename inferenced file
+    # Choose face-blurred inferenced filename
     altered_filename = str(location_id) + '_' + timestamp + '.JPG'  # Example output: '07_20220513_182014-0400.JPG'
-
-    RDEdir = os.path.join(os.path.dirname(__file__), 'runs/detect/exp/')
-    os.rename(RDEdir + image_name, RDEdir + altered_filename)
 
     # Send the data as telemetries to Azure IoT Central | WIP
     async def send_telemetry():
@@ -269,6 +293,9 @@ async def main(location_id):
 
     await send_telemetry()
     await device_client.shutdown()
+
+    # Blur faces in inferenced image
+    faceBlur(image_name, altered_filename)
 
     # Move inferenced image to Azure Web Storage
     await uploadBlobToAzureAndRemoveRunsDirectoryAndLocalImage(conn_str, altered_filename, image_name, 'runs/')
