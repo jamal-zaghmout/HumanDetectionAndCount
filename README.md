@@ -7,7 +7,7 @@ YOLOv5 model and PyTorch.
 
 - ### Python 3.8
 
-**Python3.8** is needed since YOLOv5 requires Python >=3.8 to work.
+**Python3.8** is needed since YOLOv5 requires Python>=3.8 to work.
 
 - ### YOLOv5
 
@@ -67,6 +67,7 @@ To do so, run the following commands:
 
 ```shell
 wget -c https://sourceforge.net/projects/gphoto/files/latest/download -O libgphoto2.tar.bz2
+tar xf libgphoto2.tar.bz2
 cd libgphoto2-*
 ./configure --prefix=/usr/local
 make
