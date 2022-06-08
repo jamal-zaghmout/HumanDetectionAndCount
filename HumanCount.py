@@ -74,7 +74,7 @@ def photoInferenceAndGetInferenceResults(image_name):
                 '--hide-conf',
                 '--line-thickness', '15',
                 '--exist-ok',
-                '--save-txt'
+                '--save-txt',
                 '--project', os.path.join(os.path.dirname(__file__), 'runs/detect'),
             ]
         )
@@ -158,10 +158,11 @@ def faceBlur(image_name, altered_filename):
 
     try:
         # Blur faces on inferenced image using Jan Schmidt's 'blur360' project
-        # command = blur360/build/src/equirect-blur-image -m=models -o=output_name.jpg inferenced_image_name.JPG
+        # command = blur360/build/src/equirect-blur-image -b -m=models -o=output_name.jpg inferenced_image_name.JPG
         subprocess.call(
             [
                 'blur360/build/src/equirect-blur-image',
+                '-b',
                 '-m=models',
                 '-o=' + inferenced_blurred_output_filepath,
                 inferenced_image_filepath
