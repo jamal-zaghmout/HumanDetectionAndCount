@@ -3,6 +3,13 @@
 This README will be a guide for users to setup the Jetson Nano to work with the Human Detection and Count, which uses a
 YOLOv5 model and PyTorch.
 
+This project runs in the background as a systemd service and awaits a command from IoT Central to capture an image using
+the Ricoh Theta Z1 camera at specified places, run inferencing on the image, extract the number of persons and empty
+seats as well as other data, send this data as telemetries to IoT Central, runs face blurring on the inferenced image,
+uploads the face-blurred inferenced image to Azure Web Storage, and then awaits for another IoT Central command.
+
+---
+
 ## Prerequisites
 
 - ### Python 3.8
@@ -22,6 +29,15 @@ for the device to communicate with the camera.
 **python-gphoto2** is a comprehensive Python interface (or binding) to libgphoto2 and this gives direct access to nearly
 all the libgphoto2 functions.
 
+- ### Blur360
+
+This [GitHub project by Jan Schmidt](https://github.com/thaytan/blur360) aims to provide face blurring and obscuring for
+360 images and videos in equirectangular projection. Equirectangular projection presents some special challenges for
+face detection and blurring due to the strong distortion away from the equator.
+
+This project detects faces in several re-projections of the input frame, moving an area of interest into the equatorial
+zone on each pass, finding faces and then re-projecting the obscured version back to the original frame for output.
+
 ## How to Set Up a Jetson Nano
 
 #### Install Python3.8
@@ -34,7 +50,7 @@ sudo apt install software-properties-common
 sudo add-apt-repository ppa:deadsnakes/ppa
 ```
 
- ENTER
+ENTER
 
 ```shell
 sudo apt install python3.8
@@ -47,7 +63,7 @@ sudo update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.8 2
 sudo update-alternatives --config python3
 ```
 
- Choose Python3.8’s option
+Choose Python3.8’s option
 
 ```shell
 python3 -m pip install --upgrade pip
@@ -85,8 +101,6 @@ sudo chmod -x /usr/lib/gvfs/gvfsd-gphoto2
 ```
 
 *The second command may or may not be needed; it differs from system to system*
-
-
 
 -----
 
@@ -140,7 +154,29 @@ rm gphoto2-2.3.3-cp38-cp38-linux_aarch64.whl
 *python-gphoto2 will be installed as well when we install requirements from `requirements.txt` so we'll remove the wheel
 file right after installation.*
 
+---
 
+#### Clone the blur360 GitHub repository
+
+We should clone the blur360 repository inside of the `HumanDetectionAndCount` directory. To do so, run the following
+commands:
+
+```shell
+git clone https://github.com/thaytan/blur360.git
+```
+
+Then, we should compile and build the project. To do that, we need `meson` and `OpenCV`. We will get `meson` from
+installing the requirements in `requirements.txt`; `OpenCV` should already be included in the Jetson Nano as part of
+Jetpack 4.6.1 .
+
+To build the project, run the following commands:
+
+```shell
+meson build
+ninja -C build
+```
+
+After building, we should be able to use the `equirect-blur-image` command in `build/src/`.
 
 -----
 
@@ -212,8 +248,6 @@ To check the status of the service, run the following command:
 ```shell
 sudo systemctl status RunWIP
 ```
-
-
 
 -----
 
