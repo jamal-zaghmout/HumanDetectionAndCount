@@ -172,6 +172,7 @@ Jetpack 4.6.1 .
 To build the project, run the following commands:
 
 ```shell
+cd blur360/
 meson build
 ninja -C build
 ```

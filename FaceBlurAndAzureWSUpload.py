@@ -8,17 +8,19 @@ from azure.storage.blob import BlobServiceClient
 
 
 def faceBlur(image_name, altered_filename):
-    inferenced_image_filepath = 'runs/detect/exp/' + image_name
-    inferenced_blurred_output_filepath = 'runs/detect/exp/' + altered_filename
+    print('=' * 60)
+
+    inferenced_image_filepath = os.path.join(os.path.dirname(__file__), 'runs/detect/exp/' + image_name)
+    inferenced_blurred_output_filepath = os.path.join(os.path.dirname(__file__), 'runs/detect/exp/' + altered_filename)
 
     try:
         # Blur faces on inferenced image using Jan Schmidt's 'blur360' project
-        # command = blur360/build/src/equirect-blur-image -b -m=models -o=output_name.jpg inferenced_image_name.JPG
+        # cmd: blur360/build/src/equirect-blur-image -b -m=blur360/models -o=output_name.jpg inferenced_image_name.JPG
         subprocess.call(
             [
                 'blur360/build/src/equirect-blur-image',
                 '-b',
-                '-m=models',
+                '-m=blur360/models',
                 '-o=' + inferenced_blurred_output_filepath,
                 inferenced_image_filepath
             ]
@@ -27,7 +29,9 @@ def faceBlur(image_name, altered_filename):
         logging.exception('Could not run face blurring inferenced image!')
 
 
-def uploadBlobToAzureAndRemoveRunsDirectoryAndLocalImage(conn_str, image_name, altered_filename, runs_dir):
+def uploadBlobToAzure(conn_str, altered_filename):
+    print('=' * 60)
+
     # Create the BlobServiceClient object
     blob_service_client = BlobServiceClient.from_connection_string(conn_str)
     container_name = 'wipcontainer'
@@ -42,6 +46,10 @@ def uploadBlobToAzureAndRemoveRunsDirectoryAndLocalImage(conn_str, image_name, a
     with open(inferenced_blurred_output_filepath, "rb") as data:
         blob_client.upload_blob(data)
 
+
+def removeRunsDirectoryAndLocalImage(image_name, runs_dir):
+    print('=' * 60)
+
     # Delete the local directory the inferenced file is stored in after uploading it as a blob to Azure Blob Storage
     try:
         os.remove(image_name)
@@ -52,13 +60,13 @@ def uploadBlobToAzureAndRemoveRunsDirectoryAndLocalImage(conn_str, image_name, a
 
 
 def main(conn_str, image_name, altered_filename, runs_dir):
-    # Use multiprocessing to run the 'faceBlur' and 'uploadBlobToAzureAndRemoveRunsDirectoryAndLocalImage' functions
-    with Pool() as pool:
-        r1 = pool.apply_async(faceBlur, [image_name, altered_filename])
-        r1.wait()
-        logging.info('FACE BLURRING COMPLETE')
+    logging.info('FACE BLURRING STARTED')
+    faceBlur(image_name, altered_filename)
+    logging.info('FACE BLURRING COMPLETE')
 
-        r2 = pool.apply_async(uploadBlobToAzureAndRemoveRunsDirectoryAndLocalImage,
-                              [conn_str, altered_filename, image_name, runs_dir])
-        r2.wait()
-        logging.info('UPLOADING TO AZURE WEB STORAGE COMPLETE')
+    logging.info('UPLOADING TO AZURE WEB STORAGE STARTED')
+    uploadBlobToAzure(conn_str, altered_filename)
+    logging.info('UPLOADING TO AZURE WEB STORAGE COMPLETE')
+
+    removeRunsDirectoryAndLocalImage(image_name, runs_dir)
+    logging.info('REMOVING RUNS DIRECTORY AND LOCAL IMAGE COMPLETE')
