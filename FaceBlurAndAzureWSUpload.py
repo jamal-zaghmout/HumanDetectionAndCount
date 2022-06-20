@@ -2,7 +2,6 @@ import logging
 import os
 import shutil
 import subprocess
-from multiprocessing import Pool
 
 from azure.storage.blob import BlobServiceClient
 
